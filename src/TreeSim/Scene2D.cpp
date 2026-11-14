@@ -172,25 +172,28 @@ int Scene2D::tick(long long tickCounter) {
                 sendTask(std::make_unique<task_SmgcDrawRect>(glm::vec2{x + LINESIZE, y + LINESIZE}, glm::vec2{s - 2 * LINESIZE, s - 2 * LINESIZE}, viewMap.getTileCol({rx, ry}, mode)), ID_SMGC);
             }
         }
-        if (mouse.press.x && mouse.pos.y < windowMinSize) {
+        if (mouse.pos.y < windowMinSize) {
             int rx = mouse.pos.x / s; int fry = mouse.pos.y / s; int ry = MAP_HEIGHT - 1 - fry;
             sendTask(std::make_unique<task_SmgcDrawRect>(glm::vec2{rx * s, fry * s}, glm::vec2{s, s}, glm::vec4{1.0f, 0.0f, 1.0f, 1.0f}), ID_SMGC);
-            const auto& tile = map.getTile({rx, ry});
-            if (tile) {
-                sendTask(std::make_unique<task_SmgcDrawRect>(glm::vec2{rx * s, fry * s}, glm::vec2{s, s}, glm::vec4{1.0f, 0.0f, 0.0f, 1.0f}), ID_SMGC);
-                const auto& tree = map.getTree(tile->parent);
-                std::cout << tile->parent << std::endl;
-                if (tree) {
-                    sendTask(std::make_unique<task_SmgcDrawRect>(glm::vec2{rx * s, fry * s}, glm::vec2{s, s}, glm::vec4{0.0f, 0.0f, 1.0f, 1.0f}), ID_SMGC);
-                    auto selectedGenom = tree->getGenom();
-                    viewMap.reset();
-                    viewMap.killTile({MAP_WIDTH / 2, 0});
-                    viewMap.birdTile({MAP_WIDTH / 2, 0}, {true,  true, false, 0, UINT32_MAX, selectedGenom});
-                    for (int i = 0; i < LIFESPAN - 2; i++) {
-                        //std::cout << i << std::endl;
-                        viewMap.tick();
+            if (mouse.press.x) {
+                const auto& tile = map.getTile({rx, ry});
+                if (tile) {
+                    const auto& tree = map.getTree(tile->parent);
+                    std::cout << tile->parent << std::endl;
+                    if (tree) {
+                        selectedGenom = tree->getGenom();
+                        viewMap.reset();
+                        viewMap.killTile({MAP_WIDTH / 2, 0});
+                        viewMap.birdTile({MAP_WIDTH / 2, 0}, {true,  true, false, 0, UINT32_MAX, selectedGenom});
+                        for (int i = 0; i < LIFESPAN - 2; i++) {
+                            //std::cout << i << std::endl;
+                            viewMap.tick();
+                        }
                     }
                 }
+            }
+            if (mouse.press.z) {
+                map.birdTile({rx, ry}, {true,  true, false, 0, UINT32_MAX, selectedGenom});
             }
         }
 

@@ -62,7 +62,7 @@ private:
     int speed = 0;
     bool pause = false;
 
-    uint32_t selectedTree = 0;
+    std::shared_ptr<genom> selectedGenom = nullptr;
     //std::shared_ptr<genom> selectedGenom = nullptr;
 
     uint32_t mode;

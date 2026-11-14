@@ -27,16 +27,20 @@ void Map::reset() {
         0,
         UINT32_MAX,
         std::make_shared<genom>(genom{{
-            { 6,  1,  6, -1, GENOM_SIZE - 1},
-            { 2, -1,  4, -1, GENOM_SIZE - 1},
+            { 6,  7,  6, -1, GENOM_SIZE - 1}, // 0
+            { 2, -1,  4, -1, GENOM_SIZE - 1}, // 1
 
-            {-1,  3, -1, -1, GENOM_SIZE - 1},
-            { 2, -1, -1, -1, GENOM_SIZE - 1},
+            {-1,  3, -1, -1, GENOM_SIZE - 1}, // 2
+            { 2, -1, -1, -1, GENOM_SIZE - 1}, // 3
 
-            {-1,  5, -1, -1, GENOM_SIZE - 1},
-            {-1, -1,  4, -1, GENOM_SIZE - 1},
+            {-1,  5, -1, -1, GENOM_SIZE - 1}, // 4
+            {-1, -1,  4, -1, GENOM_SIZE - 1}, // 5
 
-            {-1, -1, -1, -1, GENOM_SIZE - 1},
+            {-1, -1, -1, -1, GENOM_SIZE - 1}, // 6
+
+            {-1,  8, -1, -1, GENOM_SIZE - 1}, // 7
+            {-1,  9, -1, -1, GENOM_SIZE - 1}, // 8
+            {-1,  1, -1, -1, GENOM_SIZE - 1}, // 9
         }})
     };
     columnCount[MAP_WIDTH / 2] = 1;
@@ -110,7 +114,8 @@ void Map::tick() {
         int remainingLife = columnCount[x];
         for (int y = MAP_HEIGHT - 1; y >= 0; --y) {
             auto& ceil = map[x][y];
-            ceil.light = std::max(solid * level, 0);
+            if (y < FOG_HEIGHT) ceil.light = 0;
+            else ceil.light = std::max(solid * level, 0);
             if (ceil.life) {
                 if (!simple && ceil.parent != UINT32_MAX) {
                     Tree* parent = getTree(ceil.parent);
@@ -217,16 +222,24 @@ glm::vec4 Map::getTileCol(pos t_pos, uint32_t mode) {
     }
     const auto& tile = map[t_pos.x][t_pos.y];
     mode = mode % 2;
+    glm::vec4 col = {0.25f, 0.25f, 0.25f, 1.0f};
     if (tile.life) {
-        float light = tile.light / float(SUN_LEVELS * SUN_SOLID);
-        if (mode == 1) return {light, light * 0.5f, 0.0f, 1.0f};
-        if (tile.root) return {0.545f, 0.271f, 0.075f, 1.0f};
-        if (tile.seed) return {1.0f, 1.0f, 1.0f, 1.0f};
-        auto parent = getTree(tile.parent);
-        if (parent) return parent->getCol();
-        return {0.5f, 0.5f, 0.5f, 1.0f};
+        if (mode == 1) {
+            float light = tile.light / float(SUN_LEVELS * SUN_SOLID);
+            col = {light, light * 0.5f, 0.0f, 1.0f};
+        }
+        else {
+            if (tile.root) col = {0.545f, 0.271f, 0.075f, 1.0f};
+            else if (tile.seed) col = {1.0f, 1.0f, 1.0f, 1.0f};
+            else {
+                auto parent = getTree(tile.parent);
+                if (parent) col = parent->getCol();
+                else col = {0.5f, 0.5f, 0.5f, 1.0f};
+            }
+        }
     }
-    return {0.25f, 0.25f, 0.25f, 1.0f};
+    if (t_pos.y < FOG_HEIGHT) col += glm::vec4{0.05f, 0.05f, 0.2f, 0.0f};
+    return col;
 }
 uint32_t Map::getGeneration() {
     return generation;
