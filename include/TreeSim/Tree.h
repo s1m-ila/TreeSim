@@ -84,5 +84,6 @@ private:
     glm::vec4 col{};
     std::vector<pos> tiles{};
     std::vector<pos> activeTiles{};
+    std::vector<pos> nextActiveTiles{};
     std::vector<pos> seedTiles{};
 };

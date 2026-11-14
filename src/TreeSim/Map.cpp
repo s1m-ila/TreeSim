@@ -1,7 +1,8 @@
 #include <TreeSim/Map.h>
 
 int mod(int a, int m) {
-    return (a % m + m) % m;
+    int r = a % m;
+    return r < 0 ? r + m : r;
 }
 
 Map::Map (bool t_simple) : simple(t_simple) {
@@ -10,51 +11,35 @@ Map::Map (bool t_simple) : simple(t_simple) {
 }
 void Map::reset() {
     generation = 0;
+    columnCount.fill(0);
+    fallingSeeds.clear();
+    nextFallingSeeds.clear();
+    activeFallingSeeds.clear();
     for (auto& str : map) {
         for (auto& ceil : str) {
             ceil = Tile{};
         }
     }
-    /*
     map[MAP_WIDTH / 2][0] = Tile{
         true,
         true,
         false,
         0,
         UINT32_MAX,
-        // 1. Геном ТУИ
         std::make_shared<genom>(genom{{
-            {-1,  5, -1, -1, 0}, // 0
-            {-1, -1, -1, -1, 0}, // 1
-            { 2, -1,  2, -1, 0}, // 2
-            { 4, -1,  4, -1, GENOM_SIZE - 1}, // 3
-            { 3,  1,  3, -1, GENOM_SIZE - 1}, // 4
-            { 4,  7,  4, -1, 0}, // 5
-            { 2,  7,  2, -1, 0}, // 6
-            {-1,  6, -1, -1, 0}  // 7
+            { 6,  1,  6, -1, GENOM_SIZE - 1},
+            { 2, -1,  4, -1, GENOM_SIZE - 1},
+
+            {-1,  3, -1, -1, GENOM_SIZE - 1},
+            { 2, -1, -1, -1, GENOM_SIZE - 1},
+
+            {-1,  5, -1, -1, GENOM_SIZE - 1},
+            {-1, -1,  4, -1, GENOM_SIZE - 1},
+
+            {-1, -1, -1, -1, GENOM_SIZE - 1},
         }})
     };
-    */
-    map[MAP_WIDTH / 2][0] = Tile{
-        true,
-        true,
-        false,
-        0,
-        UINT32_MAX,
-        // 3. Геном деревца
-        std::make_shared<genom>(genom{{
-            { 6,  1,  6, -1, GENOM_SIZE - 1}, // 0
-            { 2, -1,  4, -1, GENOM_SIZE - 1}, // 1
-
-            {-1,  3, -1, -1, GENOM_SIZE - 1}, // 2
-            { 2, -1, -1, -1, GENOM_SIZE - 1}, // 3
-
-            {-1,  5, -1, -1, GENOM_SIZE - 1}, // 4
-            {-1, -1,  4, -1, GENOM_SIZE - 1}, // 5
-
-            {-1, -1, -1, -1, GENOM_SIZE - 1}, // 6
-        }})
-    };
+    columnCount[MAP_WIDTH / 2] = 1;
     trees.clear();
     freeSlots.clear();
 }
@@ -72,75 +57,75 @@ int Map::growSeed(const pos& seedPos) {
 }
 
 void Map::tick() {
-    for (auto& tree : trees) {
-        if (tree) tree->tick();
-    }
-
     for (size_t i = 0; i < trees.size(); ++i) {
-        if (trees[i] && !trees[i]->isLife()) {
-            trees[i].reset();
-            freeSlots.push_back(static_cast<uint32_t>(i));
+        if (trees[i]) {
+            trees[i]->tick();
+            if (!trees[i]->isLife()) {
+                trees[i].reset();
+                freeSlots.push_back(static_cast<uint32_t>(i));
+            }
         }
     }
 
     for (uint32_t x = 0; x < MAP_WIDTH; x++) {
         auto& ceil = map[x][0];
 
-        if (ceil.life && ceil.seed && !getTree(ceil.parent)) {
-            bool blocked = false;
-            for (int y = 1; y < MAP_HEIGHT; y++) {
-                if (map[x][y].life) {
-                    blocked = true;
-                    break;
-                }
-            }
-            if (blocked) {
+        if (ceil.life && ceil.seed && (ceil.parent == UINT32_MAX || !getTree(ceil.parent))) {
+            if (columnCount[x] > 1) {
                 ceil = Tile{};
+                columnCount[x]--;
                 continue;
             }
-            
             growSeed({x, 0});
         }
     }
 
-    std::vector<Tile> fallingSeeds{};
-    std::vector<pos> fallingSeedsPositions{};
-    for (uint32_t x = 0; x < MAP_WIDTH; x++) {
-        for (uint32_t y = 1; y < MAP_HEIGHT; y++) {
-            auto& ceil = map[x][y];
-            if (ceil.life && ceil.seed && !getTree(ceil.parent)) {
-                fallingSeeds.push_back(std::move(ceil));
-                fallingSeedsPositions.push_back({x, y - 1});
+    if (!fallingSeeds.empty()) {
+        nextFallingSeeds.clear();
+        activeFallingSeeds.clear();
+        for (const auto& p : fallingSeeds) {
+            auto& ceil = map[p.x][p.y];
+            if (ceil.life && ceil.seed && ceil.parent == UINT32_MAX) {
+                activeFallingSeeds.emplace_back(p, std::move(ceil));
                 ceil = Tile{};
             }
         }
-    }
-    for (size_t i = 0; i < fallingSeeds.size(); i++) {
-        birdTile(fallingSeedsPositions[i], std::move(fallingSeeds[i]));
+        for (auto& [p, seed] : activeFallingSeeds) {
+            if (!map[p.x][p.y - 1].life) {
+                map[p.x][p.y - 1] = std::move(seed);
+                if (p.y - 1 > 0) {
+                    nextFallingSeeds.push_back({p.x, p.y - 1});
+                }
+            } else {
+                columnCount[p.x]--;
+            }
+        }
+        fallingSeeds.swap(nextFallingSeeds);
     }
 
-    for (auto& str : map) {
+    for (uint32_t x = 0; x < MAP_WIDTH; ++x) {
+        if (columnCount[x] == 0) continue;
         int solid = SUN_SOLID;
         int level = SUN_LEVELS;
-        for (auto& ceil : str | std::views::reverse) {
+        int remainingLife = columnCount[x];
+        for (int y = MAP_HEIGHT - 1; y >= 0; --y) {
+            auto& ceil = map[x][y];
             ceil.light = std::max(solid * level, 0);
             if (ceil.life) {
-                auto parent = getTree(ceil.parent);
-                if (parent && !simple) parent->addEnergy(ceil.light - CEIL_LOSE_ENERGY);
+                if (!simple && ceil.parent != UINT32_MAX) {
+                    Tree* parent = getTree(ceil.parent);
+                    if (parent) parent->addEnergy(ceil.light - CEIL_LOSE_ENERGY);
+                }
                 level--;
                 solid--;
+                remainingLife--;
+                if (remainingLife == 0 || level <= 0) break;
             }
             else if (solid < SUN_SOLID) {
-                solid = std::min(solid + 1, SUN_SOLID);
+                solid++;
             }
-            if (level <= 0) break;
         }
     }
-    /*for (auto& str : map) {
-        for (auto& ceil : str) {
-            ceil.life = rand() & 1;
-        }
-    }*/
     generation++;
 }
 
@@ -149,34 +134,87 @@ Tree* Map::getTree(uint32_t i) {
     return trees[i].get();
 }
 int Map::setTile(pos t_pos, Tile tile) {
-    t_pos.x = mod(t_pos.x, MAP_WIDTH);
-    if (t_pos.x >= MAP_WIDTH || t_pos.y >= MAP_HEIGHT) return -1;
+    if (t_pos.y >= MAP_HEIGHT) return -1;
+    if (t_pos.x >= MAP_WIDTH) {
+        int x = static_cast<int>(t_pos.x) % MAP_WIDTH;
+        if (x < 0) x += MAP_WIDTH;
+        t_pos.x = static_cast<uint32_t>(x);
+    }
     if (!tile.seed && tile.parent != UINT32_MAX && !getTree(tile.parent)) return -3;
+    if (map[t_pos.x][t_pos.y].life) columnCount[t_pos.x]--;
+    if (tile.life) columnCount[t_pos.x]++;
+    if (tile.life && tile.seed && tile.parent == UINT32_MAX && t_pos.y > 0) {
+        fallingSeeds.push_back(t_pos);
+    }
     map[t_pos.x][t_pos.y] = std::move(tile);
     return 0;
 }
 int Map::birdTile(pos t_pos, Tile tile) {
-    t_pos.x = mod(t_pos.x, MAP_WIDTH);
-    if (t_pos.x >= MAP_WIDTH || t_pos.y >= MAP_HEIGHT) return -1;
+    if (t_pos.y >= MAP_HEIGHT) return -1;
+    if (t_pos.x >= MAP_WIDTH) {
+        int x = static_cast<int>(t_pos.x) % MAP_WIDTH;
+        if (x < 0) x += MAP_WIDTH;
+        t_pos.x = static_cast<uint32_t>(x);
+    }
     if (map[t_pos.x][t_pos.y].life) return -2;
     if (!tile.seed && tile.parent != UINT32_MAX && !getTree(tile.parent)) return -3;
+    if (tile.life) columnCount[t_pos.x]++;
+    if (tile.life && tile.seed && tile.parent == UINT32_MAX && t_pos.y > 0) {
+        fallingSeeds.push_back(t_pos);
+    }
     map[t_pos.x][t_pos.y] = std::move(tile);
     return 0;
 }
+bool Map::birdBranch(pos t_pos, uint32_t gen, uint32_t parentIndex) {
+    if (t_pos.y >= MAP_HEIGHT) return false;
+    if (t_pos.x >= MAP_WIDTH) {
+        int x = static_cast<int>(t_pos.x) % MAP_WIDTH;
+        if (x < 0) x += MAP_WIDTH;
+        t_pos.x = static_cast<uint32_t>(x);
+    }
+    Tile& cell = map[t_pos.x][t_pos.y];
+    if (cell.life) return false;
+
+    cell.life = true;
+    cell.seed = false;
+    cell.root = false;
+    cell.gen = gen;
+    cell.parent = parentIndex;
+    cell.myGenom = nullptr;
+    cell.energy = START_ENERGY;
+    cell.light = 0;
+    columnCount[t_pos.x]++;
+    return true;
+}
 int Map::killTile(pos t_pos) {
-    t_pos.x = mod(t_pos.x, MAP_WIDTH);
-    if (t_pos.x >= MAP_WIDTH || t_pos.y >= MAP_HEIGHT) return -1;
-    map[t_pos.x][t_pos.y] = Tile{};
+    if (t_pos.y >= MAP_HEIGHT) return -1;
+    if (t_pos.x >= MAP_WIDTH) {
+        int x = static_cast<int>(t_pos.x) % MAP_WIDTH;
+        if (x < 0) x += MAP_WIDTH;
+        t_pos.x = static_cast<uint32_t>(x);
+    }
+    if (map[t_pos.x][t_pos.y].life) {
+        columnCount[t_pos.x]--;
+        map[t_pos.x][t_pos.y] = Tile{};
+    }
     return 0;
 }
 Tile* Map::getTile(pos t_pos) {
-    t_pos.x = mod(t_pos.x, MAP_WIDTH);
-    if (t_pos.x >= MAP_WIDTH || t_pos.y >= MAP_HEIGHT) return nullptr;
+    if (t_pos.y >= MAP_HEIGHT) return nullptr;
+    if (t_pos.x >= MAP_WIDTH) {
+        int x = static_cast<int>(t_pos.x) % MAP_WIDTH;
+        if (x < 0) x += MAP_WIDTH;
+        t_pos.x = static_cast<uint32_t>(x);
+    }
     return &map[t_pos.x][t_pos.y];
 }
 glm::vec4 Map::getTileCol(pos t_pos, uint32_t mode) {
-    t_pos.x = mod(t_pos.x, MAP_WIDTH);
-    if (t_pos.x >= MAP_WIDTH || t_pos.y >= MAP_HEIGHT) return {0.0f, 0.0f, 0.0f, 1.0f};
+    if (t_pos.y >= MAP_HEIGHT) return {0.0f, 0.0f, 0.0f, 1.0f};
+    if (t_pos.x >= MAP_WIDTH) {
+        int x = static_cast<int>(t_pos.x) % MAP_WIDTH;
+        if (x < 0) x += MAP_WIDTH;
+        t_pos.x = static_cast<uint32_t>(x);
+    }
     const auto& tile = map[t_pos.x][t_pos.y];
     mode = mode % 2;
     if (tile.life) {

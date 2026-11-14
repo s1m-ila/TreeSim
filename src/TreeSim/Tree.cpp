@@ -1,30 +1,26 @@
 #include <TreeSim/Tree.h>
 #include <TreeSim/Map.h>
 
-// Вспомогательная функция для генерации случайных целых чисел
+static uint64_t g_rngState = []() {
+    std::random_device rd;
+    return (static_cast<uint64_t>(rd()) << 32) ^ rd();
+}();
+
+inline uint32_t fastRand() {
+    g_rngState ^= g_rngState >> 12;
+    g_rngState ^= g_rngState << 25;
+    g_rngState ^= g_rngState >> 27;
+    return static_cast<uint32_t>((g_rngState * 0x2545F4914F6CDD1DULL) >> 32);
+}
+
 int getRandomInt(int min, int max) {
-    static std::random_device rd;
-    static std::mt19937 gen(rd());
-    std::uniform_int_distribution<int> dist(min, max);
-    return dist(gen);
+    uint32_t range = static_cast<uint32_t>(max - min + 1);
+    return min + static_cast<int>((static_cast<uint64_t>(fastRand()) * range) >> 32);
 }
 
 Tree::Tree(Map* t_map, uint32_t t_index, pos t_pos, Tile* parentTile)
     : map(t_map), index(t_index), mpos(t_pos) {
-    
-    // Настраиваем диапазоны значений генов и шанс мутации под вашу симуляцию
-    const int MIN_GENE_VAL = -1;
-    const int MAX_GENE_VAL = GENOM_SIZE - 1;
 
-    // 1. Первое поколение: заполняем геном случайными числами
-    myGenom = std::make_shared<genom>();
-
-    for (size_t i = 0; i < GENOM_SIZE; ++i) {
-        for (size_t j = 0; j < 4; ++j) {
-            (*myGenom)[i][j] = getRandomInt(MIN_GENE_VAL, MAX_GENE_VAL);
-        }
-    }
-    // Случайный стартовый цвет
     col = glm::vec4(
         getRandomInt(20, 100) / 100.0f,
         getRandomInt(50, 100) / 100.0f,
@@ -32,13 +28,18 @@ Tree::Tree(Map* t_map, uint32_t t_index, pos t_pos, Tile* parentTile)
         1.0f
     );
 
-    // Задаем цвет
-    //col = genomColor(*myGenom);
-
     if (parentTile) {
-        //*parentTile = Tile{index, true, 0, false, 0, true};
         energy = parentTile->energy;
-        if (parentTile->myGenom) myGenom = parentTile->myGenom;
+        if (parentTile->myGenom) {
+            myGenom = parentTile->myGenom;
+        } else {
+            myGenom = std::make_shared<genom>();
+            for (size_t i = 0; i < GENOM_SIZE; ++i) {
+                for (size_t j = 0; j < 4; ++j) {
+                    (*myGenom)[i][j] = getRandomInt(-1, GENOM_SIZE - 1);
+                }
+            }
+        }
 
         parentTile->seed = false;
         parentTile->root = true;
@@ -55,71 +56,96 @@ Tree::Tree(Map* t_map, uint32_t t_index, pos t_pos, Tile* parentTile)
 void Tree::tick() {
     if (!map) return;
     if (!life) return;
-    //std::clog << energy << std::endl;
+
     if (age >= LIFESPAN || energy < 0) {
         for (const auto& tile : tiles) {
             map->killTile(tile);
         }
-        if (energy > 0) {
+        if (energy > 0 && !seedTiles.empty()) {
+            float seedEnergy = energy / seedTiles.size();
             for (const auto& tile : seedTiles) {
                 auto childGenom = myGenom;
-                    
+
                 if (myGenom != nullptr) {
                     bool mutated = false;
-                    genom tempGenom = *myGenom; 
-                    
+                    genom tempGenom;
+
                     for (size_t i = 0; i < GENOM_SIZE; ++i) {
                         for (size_t j = 0; j < 4; ++j) {
                             if (getRandomInt(1, 100) <= MUTATION_CHANCE) {
+                                if (!mutated) {
+                                    tempGenom = *myGenom;
+                                    mutated = true;
+                                }
                                 tempGenom[i][j] = getRandomInt(-1, GENOM_SIZE - 1);
-                                mutated = true;
                             }
                         }
                     }
 
                     if (mutated) {
-                        childGenom = std::make_shared<std::remove_reference_t<decltype(*myGenom)>>(std::move(tempGenom));
+                        childGenom = std::make_shared<genom>(std::move(tempGenom));
                     }
                 }
 
-                map->birdTile(tile, {true, true, false, 0, UINT32_MAX, childGenom, energy / seedTiles.size()});
+                map->birdTile(tile, {true, true, false, 0, UINT32_MAX, childGenom, seedEnergy});
             }
         }
 
         life = false;
         return;
     }
-    size_t len = activeTiles.size();
-    auto it = activeTiles.begin();
 
-    std::vector<pos> nextActiveTiles;
+    if (activeTiles.empty()) {
+        age++;
+        return;
+    }
+
+    nextActiveTiles.clear();
     nextActiveTiles.reserve(activeTiles.size() * 3);
 
     for (const auto& tile : activeTiles) {
         Tile* realTile = map->getTile(tile);
         if (!realTile || realTile->seed) continue;
-        std::array<pos, 4> place = {{{tile.x - 1, tile.y}, {tile.x, tile.y + 1}, {tile.x + 1, tile.y}, {tile.x, tile.y - 1}}};
-        size_t i = 0;
+
         const auto& genStr = (*myGenom)[realTile->gen % GENOM_SIZE];
-        //std::clog << genStr[0] << ';' << genStr[1] << ';' << genStr[2] << ';' << genStr[3] << std::endl;
         bool ageConvert = (genStr[4] >= GENOM_SIZE / 2 && age >= LIFESPAN - 1);
-        if (ageConvert || (genStr[0] < 0 && genStr[1] < 0 && genStr[2] < 0 && genStr[3] < 0) ) {
+        if (ageConvert || (genStr[0] < 0 && genStr[1] < 0 && genStr[2] < 0 && genStr[3] < 0)) {
             realTile->seed = true;
             seedTiles.push_back(tile);
         }
         else {
-            for (const auto& tile : place) {
-                //std::clog << gen % GENOM_SIZE << std::endl;
-                const auto& gen = genStr[i % 4];
-                if (gen >= 0 && map->birdTile(tile, {true, false, false, static_cast<uint32_t>(gen), index}) >= 0) {
-                    tiles.push_back(tile); nextActiveTiles.push_back(tile);
+            if (genStr[0] >= 0) {
+                pos nextPos = {tile.x > 0 ? tile.x - 1 : MAP_WIDTH - 1, tile.y};
+                if (map->birdBranch(nextPos, static_cast<uint32_t>(genStr[0]), index)) {
+                    tiles.push_back(nextPos);
+                    nextActiveTiles.push_back(nextPos);
                 }
-                i++; 
+            }
+            if (genStr[1] >= 0 && tile.y + 1 < MAP_HEIGHT) {
+                pos nextPos = {tile.x, tile.y + 1};
+                if (map->birdBranch(nextPos, static_cast<uint32_t>(genStr[1]), index)) {
+                    tiles.push_back(nextPos);
+                    nextActiveTiles.push_back(nextPos);
+                }
+            }
+            if (genStr[2] >= 0) {
+                pos nextPos = {tile.x + 1 < MAP_WIDTH ? tile.x + 1 : 0, tile.y};
+                if (map->birdBranch(nextPos, static_cast<uint32_t>(genStr[2]), index)) {
+                    tiles.push_back(nextPos);
+                    nextActiveTiles.push_back(nextPos);
+                }
+            }
+            if (genStr[3] >= 0 && tile.y > 0) {
+                pos nextPos = {tile.x, tile.y - 1};
+                if (map->birdBranch(nextPos, static_cast<uint32_t>(genStr[3]), index)) {
+                    tiles.push_back(nextPos);
+                    nextActiveTiles.push_back(nextPos);
+                }
             }
         }
     }
 
-    activeTiles = std::move(nextActiveTiles);
+    activeTiles.swap(nextActiveTiles);
     age++;
 }
 
@@ -143,6 +169,5 @@ int Tree::setCol(glm::vec4 t_col) {
 
 int Tree::addEnergy(float t_energy) {
     energy += t_energy;
-    //std::clog << t_energy << ' ' << energy << std::endl;
     return 0;
 }
