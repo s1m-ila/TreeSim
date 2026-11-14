@@ -51,7 +51,7 @@ private:
     bool pauseKeyWasPressed = false;
 
     Map map;
-    Map viewMap{true};
+    Map viewMap{2 * LIFESPAN + 1, LIFESPAN + 1, true};
 
     Mouse oMouse;
     bool dirty = true;

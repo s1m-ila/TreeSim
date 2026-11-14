@@ -115,13 +115,13 @@ void Tree::tick() {
         }
         else {
             if (genStr[0] >= 0) {
-                pos nextPos = {tile.x > 0 ? tile.x - 1 : MAP_WIDTH - 1, tile.y};
+                pos nextPos = {tile.x > 0 ? tile.x - 1 : map->getWidth() - 1, tile.y};
                 if (map->birdBranch(nextPos, static_cast<uint32_t>(genStr[0]), index)) {
                     tiles.push_back(nextPos);
                     nextActiveTiles.push_back(nextPos);
                 }
             }
-            if (genStr[1] >= 0 && tile.y + 1 < MAP_HEIGHT) {
+            if (genStr[1] >= 0 && tile.y + 1 < map->getHeight()) {
                 pos nextPos = {tile.x, tile.y + 1};
                 if (map->birdBranch(nextPos, static_cast<uint32_t>(genStr[1]), index)) {
                     tiles.push_back(nextPos);
@@ -129,7 +129,7 @@ void Tree::tick() {
                 }
             }
             if (genStr[2] >= 0) {
-                pos nextPos = {tile.x + 1 < MAP_WIDTH ? tile.x + 1 : 0, tile.y};
+                pos nextPos = {tile.x + 1 < map->getWidth() ? tile.x + 1 : 0, tile.y};
                 if (map->birdBranch(nextPos, static_cast<uint32_t>(genStr[2]), index)) {
                     tiles.push_back(nextPos);
                     nextActiveTiles.push_back(nextPos);

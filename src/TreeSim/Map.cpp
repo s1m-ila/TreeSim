@@ -5,22 +5,25 @@ int mod(int a, int m) {
     return r < 0 ? r + m : r;
 }
 
-Map::Map (bool t_simple) : simple(t_simple) {
+Map::Map(uint32_t t_width, uint32_t t_height, bool t_simple)
+    : width(t_width), height(t_height), simple(t_simple) {
     // Constructor
+    map.resize(static_cast<size_t>(width) * height);
+    columnCount.resize(width, 0);
     reset();
 }
+
+Map::Map(bool t_simple) : Map(MAP_WIDTH, MAP_HEIGHT, t_simple) {
+}
+
 void Map::reset() {
     generation = 0;
-    columnCount.fill(0);
+    columnCount.assign(width, 0);
     fallingSeeds.clear();
     nextFallingSeeds.clear();
     activeFallingSeeds.clear();
-    for (auto& str : map) {
-        for (auto& ceil : str) {
-            ceil = Tile{};
-        }
-    }
-    map[MAP_WIDTH / 2][0] = Tile{
+    std::fill(map.begin(), map.end(), Tile{});
+    map[static_cast<size_t>(width / 2) * height + 0] = Tile{
         true,
         true,
         false,
@@ -43,7 +46,7 @@ void Map::reset() {
             {-1,  1, -1, -1, GENOM_SIZE - 1}, // 9
         }})
     };
-    columnCount[MAP_WIDTH / 2] = 1;
+    columnCount[width / 2] = 1;
     trees.clear();
     freeSlots.clear();
 }
@@ -71,8 +74,8 @@ void Map::tick() {
         }
     }
 
-    for (uint32_t x = 0; x < MAP_WIDTH; x++) {
-        auto& ceil = map[x][0];
+    for (uint32_t x = 0; x < width; x++) {
+        auto& ceil = map[static_cast<size_t>(x) * height + 0];
 
         if (ceil.life && ceil.seed && (ceil.parent == UINT32_MAX || !getTree(ceil.parent))) {
             if (columnCount[x] > 1) {
@@ -88,15 +91,16 @@ void Map::tick() {
         nextFallingSeeds.clear();
         activeFallingSeeds.clear();
         for (const auto& p : fallingSeeds) {
-            auto& ceil = map[p.x][p.y];
+            auto& ceil = map[static_cast<size_t>(p.x) * height + p.y];
             if (ceil.life && ceil.seed && ceil.parent == UINT32_MAX) {
                 activeFallingSeeds.emplace_back(p, std::move(ceil));
                 ceil = Tile{};
             }
         }
         for (auto& [p, seed] : activeFallingSeeds) {
-            if (!map[p.x][p.y - 1].life) {
-                map[p.x][p.y - 1] = std::move(seed);
+            auto& dest = map[static_cast<size_t>(p.x) * height + (p.y - 1)];
+            if (!dest.life) {
+                dest = std::move(seed);
                 if (p.y - 1 > 0) {
                     nextFallingSeeds.push_back({p.x, p.y - 1});
                 }
@@ -107,13 +111,13 @@ void Map::tick() {
         fallingSeeds.swap(nextFallingSeeds);
     }
 
-    for (uint32_t x = 0; x < MAP_WIDTH; ++x) {
+    for (uint32_t x = 0; x < width; ++x) {
         if (columnCount[x] == 0) continue;
         int solid = SUN_SOLID;
         int level = SUN_LEVELS;
         int remainingLife = columnCount[x];
-        for (int y = MAP_HEIGHT - 1; y >= 0; --y) {
-            auto& ceil = map[x][y];
+        for (int y = static_cast<int>(height) - 1; y >= 0; --y) {
+            auto& ceil = map[static_cast<size_t>(x) * height + y];
             if (y < FOG_HEIGHT) ceil.light = 0;
             else ceil.light = std::max(solid * level, 0);
             if (ceil.life) {
@@ -139,45 +143,48 @@ Tree* Map::getTree(uint32_t i) {
     return trees[i].get();
 }
 int Map::setTile(pos t_pos, Tile tile) {
-    if (t_pos.y >= MAP_HEIGHT) return -1;
-    if (t_pos.x >= MAP_WIDTH) {
-        int x = static_cast<int>(t_pos.x) % MAP_WIDTH;
-        if (x < 0) x += MAP_WIDTH;
+    if (t_pos.y >= height) return -1;
+    if (t_pos.x >= width) {
+        int x = static_cast<int>(t_pos.x) % static_cast<int>(width);
+        if (x < 0) x += static_cast<int>(width);
         t_pos.x = static_cast<uint32_t>(x);
     }
     if (!tile.seed && tile.parent != UINT32_MAX && !getTree(tile.parent)) return -3;
-    if (map[t_pos.x][t_pos.y].life) columnCount[t_pos.x]--;
+    size_t idx = static_cast<size_t>(t_pos.x) * height + t_pos.y;
+    if (map[idx].life) columnCount[t_pos.x]--;
     if (tile.life) columnCount[t_pos.x]++;
     if (tile.life && tile.seed && tile.parent == UINT32_MAX && t_pos.y > 0) {
         fallingSeeds.push_back(t_pos);
     }
-    map[t_pos.x][t_pos.y] = std::move(tile);
+    map[idx] = std::move(tile);
     return 0;
 }
 int Map::birdTile(pos t_pos, Tile tile) {
-    if (t_pos.y >= MAP_HEIGHT) return -1;
-    if (t_pos.x >= MAP_WIDTH) {
-        int x = static_cast<int>(t_pos.x) % MAP_WIDTH;
-        if (x < 0) x += MAP_WIDTH;
+    if (t_pos.y >= height) return -1;
+    if (t_pos.x >= width) {
+        int x = static_cast<int>(t_pos.x) % static_cast<int>(width);
+        if (x < 0) x += static_cast<int>(width);
         t_pos.x = static_cast<uint32_t>(x);
     }
-    if (map[t_pos.x][t_pos.y].life) return -2;
+    size_t idx = static_cast<size_t>(t_pos.x) * height + t_pos.y;
+    if (map[idx].life) return -2;
     if (!tile.seed && tile.parent != UINT32_MAX && !getTree(tile.parent)) return -3;
     if (tile.life) columnCount[t_pos.x]++;
     if (tile.life && tile.seed && tile.parent == UINT32_MAX && t_pos.y > 0) {
         fallingSeeds.push_back(t_pos);
     }
-    map[t_pos.x][t_pos.y] = std::move(tile);
+    map[idx] = std::move(tile);
     return 0;
 }
 bool Map::birdBranch(pos t_pos, uint32_t gen, uint32_t parentIndex) {
-    if (t_pos.y >= MAP_HEIGHT) return false;
-    if (t_pos.x >= MAP_WIDTH) {
-        int x = static_cast<int>(t_pos.x) % MAP_WIDTH;
-        if (x < 0) x += MAP_WIDTH;
+    if (t_pos.y >= height) return false;
+    if (t_pos.x >= width) {
+        int x = static_cast<int>(t_pos.x) % static_cast<int>(width);
+        if (x < 0) x += static_cast<int>(width);
         t_pos.x = static_cast<uint32_t>(x);
     }
-    Tile& cell = map[t_pos.x][t_pos.y];
+    size_t idx = static_cast<size_t>(t_pos.x) * height + t_pos.y;
+    Tile& cell = map[idx];
     if (cell.life) return false;
 
     cell.life = true;
@@ -192,35 +199,36 @@ bool Map::birdBranch(pos t_pos, uint32_t gen, uint32_t parentIndex) {
     return true;
 }
 int Map::killTile(pos t_pos) {
-    if (t_pos.y >= MAP_HEIGHT) return -1;
-    if (t_pos.x >= MAP_WIDTH) {
-        int x = static_cast<int>(t_pos.x) % MAP_WIDTH;
-        if (x < 0) x += MAP_WIDTH;
+    if (t_pos.y >= height) return -1;
+    if (t_pos.x >= width) {
+        int x = static_cast<int>(t_pos.x) % static_cast<int>(width);
+        if (x < 0) x += static_cast<int>(width);
         t_pos.x = static_cast<uint32_t>(x);
     }
-    if (map[t_pos.x][t_pos.y].life) {
+    size_t idx = static_cast<size_t>(t_pos.x) * height + t_pos.y;
+    if (map[idx].life) {
         columnCount[t_pos.x]--;
-        map[t_pos.x][t_pos.y] = Tile{};
+        map[idx] = Tile{};
     }
     return 0;
 }
 Tile* Map::getTile(pos t_pos) {
-    if (t_pos.y >= MAP_HEIGHT) return nullptr;
-    if (t_pos.x >= MAP_WIDTH) {
-        int x = static_cast<int>(t_pos.x) % MAP_WIDTH;
-        if (x < 0) x += MAP_WIDTH;
+    if (t_pos.y >= height) return nullptr;
+    if (t_pos.x >= width) {
+        int x = static_cast<int>(t_pos.x) % static_cast<int>(width);
+        if (x < 0) x += static_cast<int>(width);
         t_pos.x = static_cast<uint32_t>(x);
     }
-    return &map[t_pos.x][t_pos.y];
+    return &map[static_cast<size_t>(t_pos.x) * height + t_pos.y];
 }
 glm::vec4 Map::getTileCol(pos t_pos, uint32_t mode) {
-    if (t_pos.y >= MAP_HEIGHT) return {0.0f, 0.0f, 0.0f, 1.0f};
-    if (t_pos.x >= MAP_WIDTH) {
-        int x = static_cast<int>(t_pos.x) % MAP_WIDTH;
-        if (x < 0) x += MAP_WIDTH;
+    if (t_pos.y >= height) return {0.0f, 0.0f, 0.0f, 1.0f};
+    if (t_pos.x >= width) {
+        int x = static_cast<int>(t_pos.x) % static_cast<int>(width);
+        if (x < 0) x += static_cast<int>(width);
         t_pos.x = static_cast<uint32_t>(x);
     }
-    const auto& tile = map[t_pos.x][t_pos.y];
+    const auto& tile = map[static_cast<size_t>(t_pos.x) * height + t_pos.y];
     mode = mode % 2;
     glm::vec4 col = {0.25f, 0.25f, 0.25f, 1.0f};
     if (tile.life) {
@@ -243,4 +251,10 @@ glm::vec4 Map::getTileCol(pos t_pos, uint32_t mode) {
 }
 uint32_t Map::getGeneration() {
     return generation;
+}
+uint32_t Map::getWidth() const {
+    return width;
+}
+uint32_t Map::getHeight() const {
+    return height;
 }

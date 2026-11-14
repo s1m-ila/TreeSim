@@ -154,38 +154,38 @@ int Scene2D::tick(long long tickCounter) {
         const glm::vec4& color = {1.0f, 0.942f, 0.786f, 1.0f};
         
         float windowMinSize = std::min(windowWidth, windowHeight);
-        float mapMinSize = std::min(MAP_WIDTH, MAP_HEIGHT);
-        float s = std::min((float) windowWidth / (float) MAP_WIDTH, ((float) windowHeight - 2.0f) / (float) MAP_HEIGHT / 2.0f);
+        float mapMinSize = std::min(map.getWidth(), map.getHeight());
+        float s = std::min((float) windowWidth / (float) map.getWidth(), ((float) windowHeight - 2.0f) / (float) (map.getHeight() + viewMap.getHeight()));
         //std::clog << viewMapSize << std::endl;
 
-        for (int rx = 0; rx < MAP_WIDTH; rx++) {
-            for (int ry = 0; ry < MAP_HEIGHT; ry++) {
-                float x = rx * s, y = (MAP_HEIGHT - 1 - ry) * s;
+        for (uint32_t rx = 0; rx < map.getWidth(); rx++) {
+            for (uint32_t ry = 0; ry < map.getHeight(); ry++) {
+                float x = rx * s, y = (map.getHeight() - 1 - ry) * s;
                 sendTask(std::make_unique<task_SmgcDrawRect>(glm::vec2{x, y}, glm::vec2{s, s}, glm::vec4{0.0f, 0.0f, 0.0f, 1.0f}), ID_SMGC);
                 sendTask(std::make_unique<task_SmgcDrawRect>(glm::vec2{x + LINESIZE, y + LINESIZE}, glm::vec2{s - 2 * LINESIZE, s - 2 * LINESIZE}, map.getTileCol({rx, ry}, mode)), ID_SMGC);
             }
         }
-        for (int rx = 0; rx < MAP_WIDTH; rx++) {
-            for (int ry = 0; ry < MAP_HEIGHT; ry++) {
-                float x = rx * s, y = (MAP_HEIGHT - 1 - ry) * s + MAP_HEIGHT * s + 2.0f;
+        for (uint32_t rx = 0; rx < viewMap.getWidth(); rx++) {
+            for (uint32_t ry = 0; ry < viewMap.getHeight(); ry++) {
+                float x = rx * s, y = (viewMap.getHeight() - 1 - ry) * s + map.getHeight() * s + 2.0f;
                 sendTask(std::make_unique<task_SmgcDrawRect>(glm::vec2{x, y}, glm::vec2{s, s}, glm::vec4{0.0f, 0.0f, 0.0f, 1.0f}), ID_SMGC);
                 sendTask(std::make_unique<task_SmgcDrawRect>(glm::vec2{x + LINESIZE, y + LINESIZE}, glm::vec2{s - 2 * LINESIZE, s - 2 * LINESIZE}, viewMap.getTileCol({rx, ry}, mode)), ID_SMGC);
             }
         }
         if (mouse.pos.y < windowMinSize) {
-            int rx = mouse.pos.x / s; int fry = mouse.pos.y / s; int ry = MAP_HEIGHT - 1 - fry;
+            int rx = mouse.pos.x / s; int fry = mouse.pos.y / s; int ry = map.getHeight() - 1 - fry;
             sendTask(std::make_unique<task_SmgcDrawRect>(glm::vec2{rx * s, fry * s}, glm::vec2{s, s}, glm::vec4{1.0f, 0.0f, 1.0f, 1.0f}), ID_SMGC);
             if (mouse.press.x) {
-                const auto& tile = map.getTile({rx, ry});
+                const auto& tile = map.getTile({static_cast<uint32_t>(rx), static_cast<uint32_t>(ry)});
                 if (tile) {
                     const auto& tree = map.getTree(tile->parent);
                     std::cout << tile->parent << std::endl;
                     if (tree) {
                         selectedGenom = tree->getGenom();
                         viewMap.reset();
-                        viewMap.killTile({MAP_WIDTH / 2, 0});
-                        viewMap.birdTile({MAP_WIDTH / 2, 0}, {true,  true, false, 0, UINT32_MAX, selectedGenom});
-                        for (int i = 0; i < LIFESPAN - 2; i++) {
+                        viewMap.killTile({viewMap.getWidth() / 2, 0});
+                        viewMap.birdTile({viewMap.getWidth() / 2, 0}, {true,  true, false, 0, UINT32_MAX, selectedGenom});
+                        for (int i = 0; i <= LIFESPAN; i++) {
                             //std::cout << i << std::endl;
                             viewMap.tick();
                         }
@@ -193,7 +193,7 @@ int Scene2D::tick(long long tickCounter) {
                 }
             }
             if (mouse.press.z) {
-                map.birdTile({rx, ry}, {true,  true, false, 0, UINT32_MAX, selectedGenom});
+                map.birdTile({static_cast<uint32_t>(rx), static_cast<uint32_t>(ry)}, {true,  true, false, 0, UINT32_MAX, selectedGenom});
             }
         }
 
