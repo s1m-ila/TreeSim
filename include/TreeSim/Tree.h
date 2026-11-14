@@ -63,6 +63,7 @@ inline glm::vec4 genomColor(const std::array<gen, GENOM_SIZE>& g) {
 class Map;
 
 class Tree {
+    friend class Map;
 public:
     Tree(Map* t_map = nullptr, uint32_t t_index = UINT32_MAX, pos t_pos = {0, 0}, Tile* parentTile = nullptr);
     void init();

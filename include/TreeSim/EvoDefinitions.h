@@ -1,6 +1,6 @@
 #pragma once
 
-#define MAP_WIDTH 400 // 200
+#define MAP_WIDTH 800 // 200
 #define MAP_HEIGHT 52 // 40
 
 #define SUN_SOLID 3
@@ -10,7 +10,7 @@
 #define GENOM_SIZE 30
 #define START_ENERGY 5000
 #define LIFESPAN 50//10
-#define MUTATION_CHANCE 2
+#define MUTATION_CHANCE 1
 #define FOG_HEIGHT 4 // 6*6 - 10x < 0
 
 struct pos {

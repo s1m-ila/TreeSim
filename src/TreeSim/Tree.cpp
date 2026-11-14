@@ -77,7 +77,8 @@ void Tree::tick() {
                                     tempGenom = *myGenom;
                                     mutated = true;
                                 }
-                                tempGenom[i][j] = getRandomInt(-1, GENOM_SIZE - 1);
+                                int c = GENOM_SIZE - 1;
+                                tempGenom[i][j] = getRandomInt(-c, c);
                             }
                         }
                     }
@@ -111,6 +112,7 @@ void Tree::tick() {
         bool ageConvert = (genStr[4] >= GENOM_SIZE / 2 && age >= LIFESPAN - 1);
         if (ageConvert || (genStr[0] < 0 && genStr[1] < 0 && genStr[2] < 0 && genStr[3] < 0)) {
             realTile->seed = true;
+            realTile->root = false;
             seedTiles.push_back(tile);
         }
         else {

@@ -28,6 +28,8 @@ public:
     uint32_t getGeneration();
     uint32_t getWidth() const;
     uint32_t getHeight() const;
+    bool saveToFile(const std::string& filepath) const;
+    bool loadFromFile(const std::string& filepath);
 private:
     std::random_device rd;
     std::mt19937 gen{rd()};

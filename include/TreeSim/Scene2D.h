@@ -40,7 +40,15 @@ public:
     int drawLURD(uint32_t texId, const glm::vec2& pos, const glm::vec2& size, const glm::vec4& color, const glm::vec4& offset, const uint32_t t_direction);
     int tick(long long tickCounter) override;
     void death() override;
+    static bool saveGenome(const std::string& path, const std::string& name, const genom& g);
+    static bool loadGenome(const std::string& path, std::string& name, genom& g);
 private:
+    enum class FileDialogMode {
+        None,
+        LoadGenome,
+        LoadMap
+    };
+
     int ID_SMGC;
 
     bool isPressed(int key) const;
@@ -49,10 +57,19 @@ private:
     char getCharFromKey(int key);
 
     void startEditingGene(int geneIndex);
+    void startEditingName(int mode);
     void commitGeneEdit();
     void cancelGeneEdit();
     void updateGenomeButtons();
+    void updateNameButtons();
     std::string formatGene(const gen& g) const;
+
+    void saveCurrentGenome();
+    void saveCurrentMap();
+    void openFileDialog(FileDialogMode mode);
+    void closeFileDialog();
+    std::string generateRandomGenomeName();
+    std::string generateDefaultMapName();
 
     std::unordered_map<int, bool> pressedKeys{};
     std::unordered_map<int, bool> wasPressedKeys{};
@@ -90,7 +107,21 @@ private:
     WidgetMap* widgetMapMain = nullptr;
     WidgetMap* widgetMapView = nullptr;
     Label* infoLabel = nullptr;
+    Layout* rightBottomLayoutPtr = nullptr;
     std::array<Button2*, GENOM_SIZE> geneButtons{};
+
+    Button2* genomeNameBtn = nullptr;
+    Button2* mapNameBtn = nullptr;
+    Button2* btnSaveGen = nullptr;
+    Button2* btnLoadGen = nullptr;
+    Button2* btnSaveMap = nullptr;
+    Button2* btnLoadMap = nullptr;
+
+    std::string currentGenomeName;
+    std::string customMapName;
+
+    FileDialogMode fileDialogMode = FileDialogMode::None;
+    std::unique_ptr<Layout> fileDialogLayout = nullptr;
 
     int editingGene = -1;
     std::string currentEditText = "";

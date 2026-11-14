@@ -1,4 +1,6 @@
 #include <TreeSim/Map.h>
+#include <fstream>
+#include <filesystem>
 
 int mod(int a, int m) {
     int r = a % m;
@@ -257,4 +259,228 @@ uint32_t Map::getWidth() const {
 }
 uint32_t Map::getHeight() const {
     return height;
+}
+
+bool Map::saveToFile(const std::string& filepath) const {
+    std::filesystem::create_directories(std::filesystem::path(filepath).parent_path());
+    std::ofstream out(filepath, std::ios::binary);
+    if (!out.is_open()) return false;
+
+    char magic[8] = {'T', 'R', 'E', 'E', 'S', 'I', 'M', '\0'};
+    out.write(magic, 8);
+    uint32_t version = 1;
+    out.write(reinterpret_cast<const char*>(&version), sizeof(version));
+
+    out.write(reinterpret_cast<const char*>(&width), sizeof(width));
+    out.write(reinterpret_cast<const char*>(&height), sizeof(height));
+    out.write(reinterpret_cast<const char*>(&generation), sizeof(generation));
+    uint8_t simp = simple ? 1 : 0;
+    out.write(reinterpret_cast<const char*>(&simp), sizeof(simp));
+
+    uint32_t colSize = static_cast<uint32_t>(columnCount.size());
+    out.write(reinterpret_cast<const char*>(&colSize), sizeof(colSize));
+    if (colSize > 0) {
+        out.write(reinterpret_cast<const char*>(columnCount.data()), colSize * sizeof(int));
+    }
+
+    uint32_t mapSize = static_cast<uint32_t>(map.size());
+    out.write(reinterpret_cast<const char*>(&mapSize), sizeof(mapSize));
+    for (size_t i = 0; i < mapSize; ++i) {
+        const auto& tile = map[i];
+        uint8_t flags = (tile.life ? 1 : 0) |
+                        ((tile.seed ? 1 : 0) << 1) |
+                        ((tile.root ? 1 : 0) << 2) |
+                        ((tile.myGenom != nullptr ? 1 : 0) << 3);
+        out.write(reinterpret_cast<const char*>(&flags), sizeof(flags));
+        out.write(reinterpret_cast<const char*>(&tile.gen), sizeof(tile.gen));
+        out.write(reinterpret_cast<const char*>(&tile.parent), sizeof(tile.parent));
+        out.write(reinterpret_cast<const char*>(&tile.energy), sizeof(tile.energy));
+        out.write(reinterpret_cast<const char*>(&tile.light), sizeof(tile.light));
+        if (tile.myGenom) {
+            out.write(reinterpret_cast<const char*>(tile.myGenom->data()), sizeof(genom));
+        }
+    }
+
+    uint32_t treeCount = static_cast<uint32_t>(trees.size());
+    out.write(reinterpret_cast<const char*>(&treeCount), sizeof(treeCount));
+    for (size_t i = 0; i < treeCount; ++i) {
+        uint8_t exists = (trees[i] != nullptr) ? 1 : 0;
+        out.write(reinterpret_cast<const char*>(&exists), sizeof(exists));
+        if (exists) {
+            const auto& tr = *trees[i];
+            out.write(reinterpret_cast<const char*>(&tr.index), sizeof(tr.index));
+            out.write(reinterpret_cast<const char*>(&tr.mpos), sizeof(tr.mpos));
+            uint8_t life = tr.life ? 1 : 0;
+            out.write(reinterpret_cast<const char*>(&life), sizeof(life));
+            uint64_t age = tr.age;
+            out.write(reinterpret_cast<const char*>(&age), sizeof(age));
+            out.write(reinterpret_cast<const char*>(&tr.energy), sizeof(tr.energy));
+            out.write(reinterpret_cast<const char*>(&tr.col), sizeof(tr.col));
+
+            uint8_t hasGenom = (tr.myGenom != nullptr) ? 1 : 0;
+            out.write(reinterpret_cast<const char*>(&hasGenom), sizeof(hasGenom));
+            if (hasGenom) {
+                out.write(reinterpret_cast<const char*>(tr.myGenom->data()), sizeof(genom));
+            }
+
+            uint32_t nTiles = static_cast<uint32_t>(tr.tiles.size());
+            out.write(reinterpret_cast<const char*>(&nTiles), sizeof(nTiles));
+            if (nTiles > 0) {
+                out.write(reinterpret_cast<const char*>(tr.tiles.data()), nTiles * sizeof(pos));
+            }
+
+            uint32_t nActive = static_cast<uint32_t>(tr.activeTiles.size());
+            out.write(reinterpret_cast<const char*>(&nActive), sizeof(nActive));
+            if (nActive > 0) {
+                out.write(reinterpret_cast<const char*>(tr.activeTiles.data()), nActive * sizeof(pos));
+            }
+
+            uint32_t nSeed = static_cast<uint32_t>(tr.seedTiles.size());
+            out.write(reinterpret_cast<const char*>(&nSeed), sizeof(nSeed));
+            if (nSeed > 0) {
+                out.write(reinterpret_cast<const char*>(tr.seedTiles.data()), nSeed * sizeof(pos));
+            }
+        }
+    }
+
+    uint32_t freeCount = static_cast<uint32_t>(freeSlots.size());
+    out.write(reinterpret_cast<const char*>(&freeCount), sizeof(freeCount));
+    if (freeCount > 0) {
+        out.write(reinterpret_cast<const char*>(freeSlots.data()), freeCount * sizeof(uint32_t));
+    }
+
+    uint32_t fallCount = static_cast<uint32_t>(fallingSeeds.size());
+    out.write(reinterpret_cast<const char*>(&fallCount), sizeof(fallCount));
+    if (fallCount > 0) {
+        out.write(reinterpret_cast<const char*>(fallingSeeds.data()), fallCount * sizeof(pos));
+    }
+
+    return true;
+}
+
+bool Map::loadFromFile(const std::string& filepath) {
+    std::ifstream in(filepath, std::ios::binary);
+    if (!in.is_open()) return false;
+
+    char magic[8];
+    in.read(magic, 8);
+    if (std::string(magic, 7) != "TREESIM") return false;
+
+    uint32_t version = 0;
+    in.read(reinterpret_cast<char*>(&version), sizeof(version));
+    if (version != 1) return false;
+
+    in.read(reinterpret_cast<char*>(&width), sizeof(width));
+    in.read(reinterpret_cast<char*>(&height), sizeof(height));
+    in.read(reinterpret_cast<char*>(&generation), sizeof(generation));
+    uint8_t simp = 0;
+    in.read(reinterpret_cast<char*>(&simp), sizeof(simp));
+    simple = (simp != 0);
+
+    uint32_t colSize = 0;
+    in.read(reinterpret_cast<char*>(&colSize), sizeof(colSize));
+    columnCount.resize(colSize);
+    if (colSize > 0) {
+        in.read(reinterpret_cast<char*>(columnCount.data()), colSize * sizeof(int));
+    }
+
+    uint32_t mapSize = 0;
+    in.read(reinterpret_cast<char*>(&mapSize), sizeof(mapSize));
+    map.clear();
+    map.resize(mapSize);
+    for (size_t i = 0; i < mapSize; ++i) {
+        auto& tile = map[i];
+        uint8_t flags = 0;
+        in.read(reinterpret_cast<char*>(&flags), sizeof(flags));
+        tile.life = (flags & 1) != 0;
+        tile.seed = (flags & 2) != 0;
+        tile.root = (flags & 4) != 0;
+        bool hasGenom = (flags & 8) != 0;
+
+        in.read(reinterpret_cast<char*>(&tile.gen), sizeof(tile.gen));
+        in.read(reinterpret_cast<char*>(&tile.parent), sizeof(tile.parent));
+        in.read(reinterpret_cast<char*>(&tile.energy), sizeof(tile.energy));
+        in.read(reinterpret_cast<char*>(&tile.light), sizeof(tile.light));
+        if (hasGenom) {
+            tile.myGenom = std::make_shared<genom>();
+            in.read(reinterpret_cast<char*>(tile.myGenom->data()), sizeof(genom));
+        } else {
+            tile.myGenom = nullptr;
+        }
+    }
+
+    uint32_t treeCount = 0;
+    in.read(reinterpret_cast<char*>(&treeCount), sizeof(treeCount));
+    trees.clear();
+    trees.resize(treeCount);
+    for (size_t i = 0; i < treeCount; ++i) {
+        uint8_t exists = 0;
+        in.read(reinterpret_cast<char*>(&exists), sizeof(exists));
+        if (exists) {
+            auto tr = std::make_unique<Tree>();
+            tr->map = this;
+            in.read(reinterpret_cast<char*>(&tr->index), sizeof(tr->index));
+            in.read(reinterpret_cast<char*>(&tr->mpos), sizeof(tr->mpos));
+            uint8_t life = 0;
+            in.read(reinterpret_cast<char*>(&life), sizeof(life));
+            tr->life = (life != 0);
+            uint64_t age = 0;
+            in.read(reinterpret_cast<char*>(&age), sizeof(age));
+            tr->age = age;
+            in.read(reinterpret_cast<char*>(&tr->energy), sizeof(tr->energy));
+            in.read(reinterpret_cast<char*>(&tr->col), sizeof(tr->col));
+
+            uint8_t hasGenom = 0;
+            in.read(reinterpret_cast<char*>(&hasGenom), sizeof(hasGenom));
+            if (hasGenom) {
+                tr->myGenom = std::make_shared<genom>();
+                in.read(reinterpret_cast<char*>(tr->myGenom->data()), sizeof(genom));
+            } else {
+                tr->myGenom = nullptr;
+            }
+
+            uint32_t nTiles = 0;
+            in.read(reinterpret_cast<char*>(&nTiles), sizeof(nTiles));
+            tr->tiles.resize(nTiles);
+            if (nTiles > 0) {
+                in.read(reinterpret_cast<char*>(tr->tiles.data()), nTiles * sizeof(pos));
+            }
+
+            uint32_t nActive = 0;
+            in.read(reinterpret_cast<char*>(&nActive), sizeof(nActive));
+            tr->activeTiles.resize(nActive);
+            if (nActive > 0) {
+                in.read(reinterpret_cast<char*>(tr->activeTiles.data()), nActive * sizeof(pos));
+            }
+
+            uint32_t nSeed = 0;
+            in.read(reinterpret_cast<char*>(&nSeed), sizeof(nSeed));
+            tr->seedTiles.resize(nSeed);
+            if (nSeed > 0) {
+                in.read(reinterpret_cast<char*>(tr->seedTiles.data()), nSeed * sizeof(pos));
+            }
+
+            trees[i] = std::move(tr);
+        } else {
+            trees[i] = nullptr;
+        }
+    }
+
+    uint32_t freeCount = 0;
+    in.read(reinterpret_cast<char*>(&freeCount), sizeof(freeCount));
+    freeSlots.resize(freeCount);
+    if (freeCount > 0) {
+        in.read(reinterpret_cast<char*>(freeSlots.data()), freeCount * sizeof(uint32_t));
+    }
+
+    uint32_t fallCount = 0;
+    in.read(reinterpret_cast<char*>(&fallCount), sizeof(fallCount));
+    fallingSeeds.resize(fallCount);
+    if (fallCount > 0) {
+        in.read(reinterpret_cast<char*>(fallingSeeds.data()), fallCount * sizeof(pos));
+    }
+    nextFallingSeeds.clear();
+    activeFallingSeeds.clear();
+
+    return true;
 }
