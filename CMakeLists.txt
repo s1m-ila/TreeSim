@@ -3,12 +3,14 @@ project(TreeSim LANGUAGES C CXX)
 
 add_subdirectory(../smpb smpb)
 add_subdirectory(../smgc smgc)
+add_subdirectory(../sm-gui sm-gui)
 
 # --- sm-gui::TreeSim ---
 add_library(TreeSim_TreeSim STATIC
   src/TreeSim/Tree.cpp
   src/TreeSim/Map.cpp
   src/TreeSim/Scene2D.cpp
+  src/TreeSim/WidgetMap.cpp
 )
 add_library(TreeSim::TreeSim ALIAS TreeSim_TreeSim)
 
@@ -23,6 +25,7 @@ target_link_libraries(TreeSim_TreeSim
   PUBLIC
     smpb::core
     smgc::display2D
+    sm-gui::elements
 )
 
 set_target_properties(TreeSim_TreeSim PROPERTIES CXX_EXTENSIONS OFF)
@@ -34,6 +37,7 @@ target_link_libraries(TreeSim
     TreeSim::TreeSim
     smpb::core
     smgc::display2D
+    sm-gui::elements
 )
 
 smgc_copy_files(TreeSim)

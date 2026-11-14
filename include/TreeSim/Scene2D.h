@@ -13,8 +13,18 @@
 #include <sm-gui/Spacer.h>
 #include <sm-gui/Layout.h>*/
 
+#include <sm-gui/BaseWidget.h>
+#include <sm-gui/Label.h>
+#include <sm-gui/Button.h>
+#include <sm-gui/Button2.h>
+#include <sm-gui/Spacer.h>
+#include <sm-gui/Layout.h>
+#include <TreeSim/WidgetMap.h>
+
 #include <unordered_map>
 #include <array>
+#include <memory>
+#include <string>
 
 #include "Map.h"
 
@@ -35,8 +45,17 @@ private:
 
     bool isPressed(int key) const;
     void keyboard();
+    bool justPressed(int key);
+    char getCharFromKey(int key);
+
+    void startEditingGene(int geneIndex);
+    void commitGeneEdit();
+    void cancelGeneEdit();
+    void updateGenomeButtons();
+    std::string formatGene(const gen& g) const;
 
     std::unordered_map<int, bool> pressedKeys{};
+    std::unordered_map<int, bool> wasPressedKeys{};
 
     glm::vec2 standartPlayerPos{400.0f, 700.0f};
     glm::vec2 playerPos = standartPlayerPos;
@@ -65,5 +84,15 @@ private:
     std::shared_ptr<genom> selectedGenom = nullptr;
     //std::shared_ptr<genom> selectedGenom = nullptr;
 
-    uint32_t mode;
+    uint32_t mode = 0;
+
+    std::unique_ptr<Layout> layout = nullptr;
+    WidgetMap* widgetMapMain = nullptr;
+    WidgetMap* widgetMapView = nullptr;
+    Label* infoLabel = nullptr;
+    std::array<Button2*, GENOM_SIZE> geneButtons{};
+
+    int editingGene = -1;
+    std::string currentEditText = "";
+    size_t cursorPos = 0;
 };
